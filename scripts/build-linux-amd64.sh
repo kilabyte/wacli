@@ -14,20 +14,26 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${OUT:-dist/wacli-linux-amd64}"
 go_image="${GO_IMAGE:-golang:1.25}"   # Debian (glibc) toolchain, matches the gateway
+# Distinct version so `wacli --version` confirms the patched binary is the one running.
+version="${VERSION:-0.11.1-pollvote-lid}"
 
 mkdir -p "$repo_root/$(dirname "$out")"
 
+# --platform linux/amd64 runs an amd64-native (emulated) container so CGO uses the
+# native amd64 gcc. A native arm64 gcc cannot cross-compile go-sqlite3 to amd64.
 docker run --rm \
+  --platform linux/amd64 \
   -v "$repo_root":/src \
   -w /src \
   -e CGO_ENABLED=1 \
   -e GOOS=linux \
   -e GOARCH=amd64 \
   -e CGO_CFLAGS="-Wno-error=missing-braces" \
+  -e WACLI_VERSION="$version" \
   "$go_image" \
   sh -ceu '
     apt-get update >/dev/null && apt-get install -y --no-install-recommends gcc libc6-dev >/dev/null
-    go build -tags sqlite_fts5 -trimpath -ldflags="-s -w" -o "'"$out"'" ./cmd/wacli
+    go build -tags sqlite_fts5 -trimpath -ldflags="-s -w -X main.version=${WACLI_VERSION}" -o "'"$out"'" ./cmd/wacli
   '
 
 echo "Built: $repo_root/$out"
