@@ -14,6 +14,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// Use the vendored, patched copy of whatsmeow (pinned commit 6dd3d24c1ca6 plus the
+// PN<->LID poll-vote decryption fix). See third_party/whatsmeow/VENDOR_INFO.md and
+// patches/0001-whatsmeow-poll-vote-lid-realm.patch. Remove this once the fix lands upstream.
+replace go.mau.fi/whatsmeow => ./third_party/whatsmeow
+
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect

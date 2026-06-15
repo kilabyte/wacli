@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Polls: decrypt group poll votes from members addressed in a different realm (`@s.whatsapp.net` vs `@lid`) than the one used to encrypt the vote. Previously a significant fraction of votes were silently dropped from `poll show`. Patches the vendored whatsmeow message-secret decryption to retry key derivation across the PN<->LID alternates of both the poll author and the voter (`third_party/whatsmeow`, `replace` in `go.mod`).
+
 ## 0.11.1 - 2026-06-11
 
 ### Added
