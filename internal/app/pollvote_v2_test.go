@@ -86,6 +86,23 @@ func TestWarmGroupSessions_GroupFilter(t *testing.T) {
 	}
 }
 
+func TestWarmGroupSessions_BadGroupFailsClosed(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+	alice := jidUser("111", types.DefaultUserServer)
+	g1 := groupWith("g1-1", alice)
+	f.groups[g1.JID] = g1
+
+	// "1.2.3@g.us" makes types.ParseJID error (too many dots). A bad filter must NOT widen warming
+	// to all joined groups; it must warm nothing.
+	a.warmGroupSessions(context.Background(), "1.2.3@g.us")
+
+	if len(f.warmSessionsJIDs) != 0 {
+		t.Fatalf("invalid --warm-group should fail closed (warm nothing), got %v", f.warmSessionsJIDs)
+	}
+}
+
 func TestWarmGroupSessions_NoMembersNoCall(t *testing.T) {
 	a := newTestApp(t)
 	f := newFakeWA()

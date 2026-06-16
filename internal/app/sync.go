@@ -186,13 +186,20 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 			)
 		}
 	}
-	if opts.WarmSessions {
-		a.warmGroupSessions(syncCtx, opts.WarmGroup)
-	}
 	if opts.AfterConnect != nil {
 		if err := opts.AfterConnect(syncCtx); err != nil {
 			return SyncResult{MessagesStored: messagesStored.Load()}, err
 		}
+	}
+	if opts.WarmSessions {
+		// Warming does a usync that holds whatsmeow's device-cache lock (and can take up to the IQ
+		// timeout). Run it in the background with its own bounded context, AFTER the send-delegate is
+		// up, so it never delays wacli becoming a live recipient or sending. Best-effort.
+		go func() {
+			warmCtx, cancel := context.WithTimeout(syncCtx, warmSessionsTimeout)
+			defer cancel()
+			a.warmGroupSessions(warmCtx, opts.WarmGroup)
+		}()
 	}
 
 	var err error

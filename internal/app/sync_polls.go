@@ -26,7 +26,7 @@ func (a *App) handlePollSideEffects(ctx context.Context, pm wa.ParsedMessage, ev
 		a.handlePollAddOption(ctx, pm, evt)
 	}
 	if pm.PollVote != nil && evt != nil {
-		a.handlePollVote(ctx, pm, evt)
+		a.handlePollVote(ctx, pm, evt, "live")
 	}
 }
 
@@ -82,7 +82,7 @@ func (a *App) handleHistoryPollSideEffects(ctx context.Context, pm wa.ParsedMess
 			)
 			return
 		}
-		a.handlePollVote(ctx, pm, evt)
+		a.handlePollVote(ctx, pm, evt, "history")
 	}
 }
 
@@ -248,7 +248,9 @@ func (a *App) upsertPollFromParsed(ctx context.Context, pm wa.ParsedMessage) {
 	}
 }
 
-func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *events.Message) {
+// handlePollVote decrypts and stores a poll vote. source is "live" or "history" and is recorded in
+// the debug receipt so a history-replayed vote is not mistaken for one that arrived live.
+func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *events.Message, source string) {
 	if a.db == nil || pm.PollVote == nil || evt == nil {
 		return
 	}
@@ -262,9 +264,9 @@ func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *even
 		return
 	}
 
-	// Receipt-layer log: this vote reached our device. A vote with no pollvote_received line was a
-	// delivery gap (never queued for us); one with a failed pollvote_outcome was a decrypt gap.
-	a.logPollVoteReceipt(chatJID, pollMsgID, evt)
+	// Receipt-layer log: this vote reached our device. A live vote with no pollvote_received line was
+	// a delivery gap (never queued for us); one with a failed pollvote_outcome was a decrypt gap.
+	a.logPollVoteReceipt(chatJID, pollMsgID, source, evt)
 
 	poll, err := a.db.GetPoll(chatJID, pollMsgID)
 	if err != nil {
@@ -276,6 +278,7 @@ func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *even
 			poll = alt
 			chatJID = alt.ChatJID
 		} else {
+			a.logPollVoteSkipped(chatJID, pollMsgID, evt, "unknown_poll")
 			a.emitWarning(
 				"poll_vote_unknown_poll",
 				fmt.Sprintf("warning: poll vote %s references unknown poll %s/%s: %v", pm.ID, chatJID, pollMsgID, err),

@@ -154,10 +154,18 @@ See `third_party/whatsmeow/VENDOR_INFO.md`. Pinned upstream commit `6dd3d24c1ca6
 
 ---
 
-## v2 / v3 (`0.11.1-pollvote-lid-v3`)
+## v2 / v3 / v4 (`0.11.1-pollvote-lid-v4`)
 
-> The build marker is `0.11.1-pollvote-lid-v3` (latest). The changes below are unchanged since the
-> v2 build; the marker was bumped so `wacli --version` unambiguously identifies the newest binary.
+> The build marker is `0.11.1-pollvote-lid-v4` (latest). v4 applies the should-fixes from the
+> adversarial review on top of the v2/v3 change set:
+> - warm usync now runs in the background with a bounded (30s) context, after the send-delegate
+>   starts, so it never delays wacli becoming a live recipient;
+> - an invalid `--warm-group` now fails closed (skips warming) instead of warming all joined groups;
+> - the debug receipt carries a `source` field (`live` vs `history`) so a history-replayed vote is
+>   not mistaken for a live arrival; every receipt now has exactly one terminal outcome
+>   (`ok` / `failed` / `skipped`);
+> - `sync --for` expiring is treated as a clean exit (no `DeadlineExceeded` surfaced);
+> - debug NDJSON records use a `kind` field (no double-nested `event`).
 
 ### What v1 left open
 
@@ -191,21 +199,22 @@ Set the env var, then `sync`. Two record types are emitted (NDJSON via the event
 
 - **Receipt (every vote that reaches us, before decrypt):**
   ```json
-  {"event":"pollvote_received","poll_msg_id":"…","chat_jid":"…@g.us","vote_msg_id":"…",
+  {"kind":"pollvote_received","source":"live","poll_msg_id":"…","chat_jid":"…@g.us","vote_msg_id":"…",
    "voter":"…@lid","voter_alt":"…@s.whatsapp.net","addressing":"lid","from_me":false,
    "sender_ts":"2026-06-15T14:03:12Z"}
   ```
-- **Outcome (decrypt result):**
+- **Outcome (decrypt result; exactly one per receipt):**
   ```json
-  {"event":"pollvote_outcome","poll_msg_id":"…","voter":"…@lid","voter_alt":"…@s.whatsapp.net",
+  {"kind":"pollvote_outcome","poll_msg_id":"…","voter":"…@lid","voter_alt":"…@s.whatsapp.net",
    "addressing":"lid","outcome":"ok","voter_canonical":"…@s.whatsapp.net"}
   ```
   On failure: `"outcome":"failed","reason":"…","error":"…"` where `reason` is one of
-  `mac_mismatch_all_realms` | `message_secret_not_found` | `not_poll_update` | `other`.
+  `mac_mismatch_all_realms` | `message_secret_not_found` | `not_poll_update` | `other`. A vote that
+  referenced a poll row we didn't have yet is `"outcome":"skipped","reason":"unknown_poll"`.
 
-**Reading it next slate:** a ground-truth voter with **no `pollvote_received`** line = delivery gap
-(never queued for us). One **with** a receipt but a **failed** outcome = decrypt gap. This is the
-signal that separates the two for good.
+**Reading it next slate:** a ground-truth voter with **no `source:"live"` `pollvote_received`** line =
+delivery gap (never queued for us). One **with** a live receipt but a **failed** outcome = decrypt
+gap. (A `source:"history"` receipt means the vote arrived late via history sync, not live.)
 
 ### Suggested live test
 

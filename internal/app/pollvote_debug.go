@@ -20,12 +20,15 @@ import (
 var debugPollVote = os.Getenv("WACLI_DEBUG_POLLVOTE") == "1"
 
 // logPollVoteReceipt records a poll vote the moment it reaches this device, before decryption.
-func (a *App) logPollVoteReceipt(chatJID, pollMsgID string, evt *events.Message) {
+// source is "live" or "history": only a *live* vote with no receipt indicates a delivery gap; a
+// history-replayed vote is one that missed the live window and reappeared on a later connect.
+func (a *App) logPollVoteReceipt(chatJID, pollMsgID, source string, evt *events.Message) {
 	if !debugPollVote || evt == nil {
 		return
 	}
 	a.pollVoteDebugLine(map[string]any{
-		"event":       "pollvote_received",
+		"kind":        "pollvote_received",
+		"source":      source,
 		"poll_msg_id": pollMsgID,
 		"chat_jid":    chatJID,
 		"vote_msg_id": evt.Info.ID,
@@ -37,13 +40,14 @@ func (a *App) logPollVoteReceipt(chatJID, pollMsgID string, evt *events.Message)
 	})
 }
 
-// logPollVoteOutcome records the result of decrypting a received poll vote.
+// logPollVoteOutcome records the result of decrypting a received poll vote. Every receipt is followed
+// by exactly one outcome (ok / failed / skipped), so a receipt with no outcome never occurs.
 func (a *App) logPollVoteOutcome(chatJID, pollMsgID, voterJID string, evt *events.Message, decErr error) {
 	if !debugPollVote || evt == nil {
 		return
 	}
 	rec := map[string]any{
-		"event":       "pollvote_outcome",
+		"kind":        "pollvote_outcome",
 		"poll_msg_id": pollMsgID,
 		"chat_jid":    chatJID,
 		"voter":       evt.Info.Sender.String(),
@@ -59,6 +63,24 @@ func (a *App) logPollVoteOutcome(chatJID, pollMsgID, voterJID string, evt *event
 		rec["error"] = decErr.Error()
 	}
 	a.pollVoteDebugLine(rec)
+}
+
+// logPollVoteSkipped records a received vote that was neither decrypted nor classified as a decrypt
+// failure (e.g. it referenced a poll row we don't have yet), so every receipt has a terminal record.
+func (a *App) logPollVoteSkipped(chatJID, pollMsgID string, evt *events.Message, reason string) {
+	if !debugPollVote || evt == nil {
+		return
+	}
+	a.pollVoteDebugLine(map[string]any{
+		"kind":        "pollvote_outcome",
+		"poll_msg_id": pollMsgID,
+		"chat_jid":    chatJID,
+		"voter":       evt.Info.Sender.String(),
+		"voter_alt":   altJIDString(evt.Info.SenderAlt),
+		"addressing":  string(evt.Info.AddressingMode),
+		"outcome":     "skipped",
+		"reason":      reason,
+	})
 }
 
 // classifyDecryptFailure buckets a decrypt error into a stable, greppable reason code.

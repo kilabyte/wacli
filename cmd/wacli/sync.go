@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -122,7 +123,14 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 				WebhookAllowPrivate: webhookAllowPrivate,
 			})
 			if err != nil {
-				return err
+				// --for expiring is a clean, expected stop, not a failure. The window context can
+				// fire during a setup phase (connect/migrate/AfterConnect) before the follow loop's
+				// own ctx.Done handler turns it into a nil return, so normalise it here.
+				if forDuration > 0 && errors.Is(err, context.DeadlineExceeded) {
+					err = nil
+				} else {
+					return err
+				}
 			}
 
 			if flags.asJSON {

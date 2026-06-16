@@ -3,9 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.mau.fi/whatsmeow/types"
 )
+
+// warmSessionsTimeout bounds the background warm usync so it can't hold whatsmeow's device-cache
+// lock indefinitely (a single usync IQ can otherwise block up to the ~75s IQ timeout).
+const warmSessionsTimeout = 30 * time.Second
 
 // warmGroupSessions refreshes the device lists / PN<->LID mappings for members of joined groups via
 // a usync query right after connecting. Opt-in (--warm-sessions); off by default.
@@ -26,13 +31,16 @@ func (a *App) warmGroupSessions(ctx context.Context, groupFilter string) {
 
 	var want *types.JID
 	if groupFilter != "" {
-		if jid, perr := types.ParseJID(groupFilter); perr == nil {
-			want = &jid
-		} else {
+		jid, perr := types.ParseJID(groupFilter)
+		if perr != nil {
+			// Fail closed: a bad --warm-group must NOT silently widen warming to every joined
+			// group (the opposite of the intended scope). Skip warming entirely.
 			a.emitWarning("warm_sessions_bad_group",
-				fmt.Sprintf("warning: warm-sessions ignoring invalid --warm-group %q: %v", groupFilter, perr),
+				fmt.Sprintf("warning: warm-sessions skipped: invalid --warm-group %q: %v", groupFilter, perr),
 				map[string]any{"error": perr.Error()})
+			return
 		}
+		want = &jid
 	}
 
 	seen := make(map[types.JID]struct{})
