@@ -280,15 +280,53 @@ func TestDecryptPollVote_FromMeSelfVoteRealmMismatch(t *testing.T) {
 	assertVote(t, cli, evt, options)
 }
 
+// TestDecryptPollVote_VoterAltFromEnvelopeNoLidMap is the v2 case: the lid_map has NO entry for the
+// voter (the residual June-15 failure mode), but the event envelope carries the voter's alternate
+// realm in SenderAlt. The retry must use SenderAlt directly so the vote still decrypts.
+func TestDecryptPollVote_VoterAltFromEnvelopeNoLidMap(t *testing.T) {
+	secret := make([]byte, 32)
+	rand.Read(secret)
+	author := jidPN(authorPNUser)
+	options := []string{"Ivory Coast"}
+
+	// Voter encrypted with their PN; event arrives addressed by LID with SenderAlt = the PN.
+	enc := encryptVoteAs(t, jidPN(voterPNUser), author, secret, options)
+	chat, _ := types.ParseJID(groupChat)
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:           chat,
+				Sender:         jidLID(voterLIDUser),
+				SenderAlt:      jidPN(voterPNUser), // <-- the realm we need, straight from the envelope
+				AddressingMode: types.AddressingModeLID,
+				IsGroup:        true,
+			},
+			ID: pollID,
+		},
+		Message: &waE2E.Message{PollUpdateMessage: &waE2E.PollUpdateMessage{
+			Vote: enc,
+			PollCreationMessageKey: &waCommon.MessageKey{
+				RemoteJID:   proto.String(groupChat),
+				FromMe:      proto.Bool(false),
+				ID:          proto.String(string(pollID)),
+				Participant: proto.String(author.String()),
+			},
+		}},
+	}
+
+	// EMPTY lid_map: GetAltJID can't help; only SenderAlt can.
+	assertVote(t, newClient(secret, author, fakeLIDs{}), evt, options)
+}
+
 // TestDecryptPollVote_UnknownVoterStaysFailed proves we don't silently mis-decrypt: if there's no
-// LID mapping for the voter and the realm genuinely mismatches, decryption still fails (no false
-// positive from the GCM tag).
+// LID mapping for the voter, no SenderAlt, and the realm genuinely mismatches, decryption still
+// fails (no false positive from the GCM tag).
 func TestDecryptPollVote_UnknownVoterStaysFailed(t *testing.T) {
 	secret := make([]byte, 32)
 	rand.Read(secret)
 	author := jidPN(authorPNUser)
 	enc := encryptVoteAs(t, jidPN(voterPNUser), author, secret, []string{"Ivory Coast"})
-	evt := voteEvent(jidLID(voterLIDUser), author, enc)
+	evt := voteEvent(jidLID(voterLIDUser), author, enc) // no SenderAlt set
 
 	// Empty LID map: no PN<->LID resolution available.
 	cli := newClient(secret, author, fakeLIDs{})

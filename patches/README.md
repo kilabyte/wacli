@@ -151,3 +151,64 @@ See `third_party/whatsmeow/VENDOR_INFO.md`. Pinned upstream commit `6dd3d24c1ca6
 > Note for upstreaming: adjust the test file's copyright header, and consider whether to also drop
 > the now-redundant `storedOrigSender`-only retry in favour of the generalised loop (this patch keeps
 > behaviour a superset of it).
+
+---
+
+## v2 (`0.11.1-pollvote-lid-v2`)
+
+### What v1 left open
+
+Live diagnosis on a real slate showed the residual drops were a **delivery/presence gap, not a
+decryption gap**. v1's decrypt fix works 100% on votes that *arrive*. The dropped votes (fast voters,
+within ~60-90s of a poll posting) never reached the wacli linked device at all (no `Poll vote`
+placeholder row, never queued), because wacli posts-then-disconnects and the senders' clients had not
+yet routed to wacli's freshly server-migrated LID device.
+
+### v2 changes vs v1
+
+1. **Decrypt hardening (defense in depth, vendored whatsmeow):** the realm retry now also includes
+   `msg.Info.SenderAlt` (the voter's alternate-realm JID carried in the event envelope), so the
+   voter's other realm is available even when `whatsmeow_lid_map` has no mapping yet. Still a full
+   author x voter cross-product, still GCM-gated (no false positives). New test
+   `TestDecryptPollVote_VoterAltFromEnvelopeNoLidMap` proves the empty-`lid_map` case.
+2. **`sync --follow` fix:** the send-delegate `.send.sock` `chmod` is now best-effort (warn, not
+   fatal) so follow runs on bind-mounted filesystems (macOS Docker virtiofs returns `EINVAL`). This
+   unblocks staying connected through the voting window.
+3. **`sync --follow --for <duration>`:** hold the live connection for a fixed window then exit
+   cleanly. Run it spanning poll time so wacli is a guaranteed live recipient during early voting.
+4. **`sync --warm-sessions` (opt-in, off by default):** on connect, usync-refresh group members'
+   device lists / PN<->LID mappings so recent realm migrations are recognised sooner. `--warm-group
+   <jid>` restricts to one group. Sends nothing user-visible. Effect on *sender-side* routing is
+   best-effort/unverified; staying connected (`--for`) is the stronger lever.
+
+### Verbose logging: `WACLI_DEBUG_POLLVOTE=1`
+
+Set the env var, then `sync`. Two record types are emitted (NDJSON via the event stream when run with
+`--events`, otherwise greppable `WACLI_DEBUG_POLLVOTE {json}` lines on stderr):
+
+- **Receipt (every vote that reaches us, before decrypt):**
+  ```json
+  {"event":"pollvote_received","poll_msg_id":"…","chat_jid":"…@g.us","vote_msg_id":"…",
+   "voter":"…@lid","voter_alt":"…@s.whatsapp.net","addressing":"lid","from_me":false,
+   "sender_ts":"2026-06-15T14:03:12Z"}
+  ```
+- **Outcome (decrypt result):**
+  ```json
+  {"event":"pollvote_outcome","poll_msg_id":"…","voter":"…@lid","voter_alt":"…@s.whatsapp.net",
+   "addressing":"lid","outcome":"ok","voter_canonical":"…@s.whatsapp.net"}
+  ```
+  On failure: `"outcome":"failed","reason":"…","error":"…"` where `reason` is one of
+  `mac_mismatch_all_realms` | `message_secret_not_found` | `not_poll_update` | `other`.
+
+**Reading it next slate:** a ground-truth voter with **no `pollvote_received`** line = delivery gap
+(never queued for us). One **with** a receipt but a **failed** outcome = decrypt gap. This is the
+signal that separates the two for good.
+
+### Suggested live test
+
+```sh
+# span the poll's early-vote window as a live recipient, with logging on:
+WACLI_DEBUG_POLLVOTE=1 /home/node/.local/bin/wacli sync --follow --for 10m --warm-sessions 2>pollvote.log
+# (start it just before the poll posts)
+```
+Then `poll show`, cross-check against the group's screenshots, and send `pollvote.log`.

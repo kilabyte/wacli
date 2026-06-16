@@ -45,6 +45,8 @@ type SyncOptions struct {
 	RefreshContacts     bool
 	RefreshGroups       bool
 	RefreshChannels     bool
+	WarmSessions        bool          // refresh group members' device lists on connect (opt-in)
+	WarmGroup           string        // restrict warming to this group JID (empty = all joined groups)
 	IdleExit            time.Duration // only used for bootstrap/once
 	MaxReconnect        time.Duration // max time to attempt reconnection before giving up (0 = unlimited)
 	StaleThreshold      time.Duration // force reconnect when keepalive failures last this long in follow mode (0 = disabled)
@@ -183,6 +185,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 				map[string]any{"error": err.Error()},
 			)
 		}
+	}
+	if opts.WarmSessions {
+		a.warmGroupSessions(syncCtx, opts.WarmGroup)
 	}
 	if opts.AfterConnect != nil {
 		if err := opts.AfterConnect(syncCtx); err != nil {

@@ -669,6 +669,21 @@ func (c *Client) GetUserInfo(ctx context.Context, jids []types.JID) (map[types.J
 	return cli.GetUserInfo(ctx, jids)
 }
 
+// WarmSessions refreshes the device lists (and PN<->LID mappings) for the given users via a usync
+// query. It does not send any user-visible message; it only refreshes our local routing/identity
+// view so we recognise members' current devices sooner after a realm migration. Returns the number
+// of devices discovered.
+func (c *Client) WarmSessions(ctx context.Context, jids []types.JID) (int, error) {
+	c.mu.Lock()
+	cli := c.client
+	c.mu.Unlock()
+	if cli == nil || !cli.IsConnected() {
+		return 0, fmt.Errorf("not connected")
+	}
+	devices, err := cli.GetUserDevicesContext(ctx, jids)
+	return len(devices), err
+}
+
 func (c *Client) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
 	c.mu.Lock()
 	cli := c.client

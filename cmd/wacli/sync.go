@@ -14,6 +14,9 @@ import (
 func newSyncCmd(flags *rootFlags) *cobra.Command {
 	var once bool
 	var follow bool
+	var forDuration time.Duration
+	var warmSessions bool
+	var warmGroup string
 	var idleExit time.Duration
 	var maxReconnect time.Duration
 	var staleThreshold time.Duration
@@ -69,6 +72,17 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 				mode = appPkg.SyncModeOnce
 			}
 
+			// --for bounds a follow run to a fixed window then exits cleanly, so wacli can be a
+			// guaranteed live recipient through the early-vote window without manual Ctrl+C.
+			if forDuration > 0 {
+				if mode != appPkg.SyncModeFollow {
+					return fmt.Errorf("--for only applies in follow mode (drop --once)")
+				}
+				var cancelFor context.CancelFunc
+				ctx, cancelFor = context.WithTimeout(ctx, forDuration)
+				defer cancelFor()
+			}
+
 			var stopSendDelegate func()
 			defer func() {
 				if stopSendDelegate != nil {
@@ -95,6 +109,8 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 				RefreshContacts:     refreshContacts,
 				RefreshGroups:       refreshGroups,
 				RefreshChannels:     refreshChannels,
+				WarmSessions:        warmSessions,
+				WarmGroup:           warmGroup,
 				IdleExit:            idleExit,
 				MaxReconnect:        maxReconnect,
 				StaleThreshold:      staleThreshold,
@@ -122,6 +138,9 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 
 	cmd.Flags().BoolVar(&once, "once", false, "sync until idle and exit")
 	cmd.Flags().BoolVar(&follow, "follow", true, "keep syncing until Ctrl+C")
+	cmd.Flags().DurationVar(&forDuration, "for", 0, "in follow mode, stay connected for this long then exit cleanly (e.g. 5m; 0 = until Ctrl+C)")
+	cmd.Flags().BoolVar(&warmSessions, "warm-sessions", false, "on connect, refresh group members' device lists via usync so recent realm migrations are recognised sooner")
+	cmd.Flags().StringVar(&warmGroup, "warm-group", "", "restrict --warm-sessions to this group JID (default: all joined groups)")
 	cmd.Flags().DurationVar(&idleExit, "idle-exit", 30*time.Second, "exit after being idle (once mode)")
 	cmd.Flags().DurationVar(&maxReconnect, "max-reconnect", 5*time.Minute, "give up reconnecting after this duration (0 = unlimited)")
 	cmd.Flags().DurationVar(&staleThreshold, "stale-threshold", 0, "force reconnect when keepalive failures last this long in follow mode (1s-<2m20s, 0 = disabled)")

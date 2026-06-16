@@ -132,9 +132,11 @@ func startSendDelegateServer(ctx context.Context, a *app.App) (func(), error) {
 		return nil, err
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		_ = ln.Close()
-		_ = os.Remove(path)
-		return nil, err
+		// Some bind-mounted filesystems (notably macOS Docker virtiofs/gRPC-FUSE) reject
+		// chmod on a unix socket with EINVAL, which previously made `sync --follow` fatal.
+		// The socket lives inside the owner-only (0700) store dir, so it is already protected;
+		// warn and continue rather than aborting follow mode.
+		fmt.Fprintf(os.Stderr, "warning: could not chmod send-delegate socket %s: %v (continuing; protected by store dir permissions)\n", path, err)
 	}
 
 	done := make(chan struct{})

@@ -262,6 +262,10 @@ func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *even
 		return
 	}
 
+	// Receipt-layer log: this vote reached our device. A vote with no pollvote_received line was a
+	// delivery gap (never queued for us); one with a failed pollvote_outcome was a decrypt gap.
+	a.logPollVoteReceipt(chatJID, pollMsgID, evt)
+
 	poll, err := a.db.GetPoll(chatJID, pollMsgID)
 	if err != nil {
 		// Fall back to msg-id-only lookup. WhatsApp re-keys self-poll
@@ -288,6 +292,7 @@ func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *even
 
 	decrypted, err := a.wa.DecryptPollVote(ctx, evt)
 	if err != nil {
+		a.logPollVoteOutcome(chatJID, pollMsgID, "", evt, err)
 		a.emitWarning(
 			"poll_vote_decrypt_failed",
 			fmt.Sprintf("warning: failed to decrypt poll vote %s: %v", pm.ID, err),
@@ -306,6 +311,7 @@ func (a *App) handlePollVote(ctx context.Context, pm wa.ParsedMessage, evt *even
 	if parsed, err := types.ParseJID(voterJID); err == nil {
 		voterJID = canonicalJIDString(a.wa.ResolveLIDToPN(ctx, parsed))
 	}
+	a.logPollVoteOutcome(chatJID, pollMsgID, voterJID, evt, nil)
 	if voterJID == "" {
 		a.emitWarning(
 			"poll_vote_no_voter",

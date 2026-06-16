@@ -125,7 +125,11 @@ func (cli *Client) decryptMsgSecret(ctx context.Context, msg *events.Message, us
 	// alongside the secret, and the modification sender (e.g. the poll voter). The first
 	// combination that authenticates wins. GCM authentication makes a wrong key/AAD fail rather
 	// than yield bad plaintext, so trying additional combinations is safe.
-	modSenders := cli.altRealmJIDs(ctx, msg.Info.Sender)
+	//
+	// msg.Info.SenderAlt is the modification sender's alternate-realm address carried directly in
+	// the event envelope; including it means the voter's other realm is available even when
+	// whatsmeow_lid_map has no mapping for them yet (the common case for a member who just migrated).
+	modSenders := cli.altRealmJIDs(ctx, msg.Info.Sender, msg.Info.SenderAlt)
 	origSenders := cli.altRealmJIDs(ctx, origSender, storedOrigSender)
 	for _, modSender := range modSenders {
 		for _, sender := range origSenders {

@@ -37,6 +37,7 @@ type WAClient interface {
 	ResolveLIDToPN(ctx context.Context, jid types.JID) types.JID
 	ResolvePNToLID(ctx context.Context, jid types.JID) types.JID
 	GetUserInfo(ctx context.Context, jids []types.JID) (map[types.JID]types.UserInfo, error)
+	WarmSessions(ctx context.Context, jids []types.JID) (int, error)
 	IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error)
 	GetContact(ctx context.Context, jid types.JID) (types.ContactInfo, error)
 	GetAllContacts(ctx context.Context) (map[types.JID]types.ContactInfo, error)
