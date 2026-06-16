@@ -154,7 +154,10 @@ See `third_party/whatsmeow/VENDOR_INFO.md`. Pinned upstream commit `6dd3d24c1ca6
 
 ---
 
-## v2 (`0.11.1-pollvote-lid-v2`)
+## v2 / v3 (`0.11.1-pollvote-lid-v3`)
+
+> The build marker is `0.11.1-pollvote-lid-v3` (latest). The changes below are unchanged since the
+> v2 build; the marker was bumped so `wacli --version` unambiguously identifies the newest binary.
 
 ### What v1 left open
 
