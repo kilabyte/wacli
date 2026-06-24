@@ -18,6 +18,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 	var forDuration time.Duration
 	var warmSessions bool
 	var warmGroup string
+	var warmInterval time.Duration
 	var idleExit time.Duration
 	var maxReconnect time.Duration
 	var staleThreshold time.Duration
@@ -112,6 +113,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 				RefreshChannels:     refreshChannels,
 				WarmSessions:        warmSessions,
 				WarmGroup:           warmGroup,
+				WarmInterval:        warmInterval,
 				IdleExit:            idleExit,
 				MaxReconnect:        maxReconnect,
 				StaleThreshold:      staleThreshold,
@@ -149,6 +151,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 	cmd.Flags().DurationVar(&forDuration, "for", 0, "in follow mode, stay connected for this long then exit cleanly (e.g. 5m; 0 = until Ctrl+C)")
 	cmd.Flags().BoolVar(&warmSessions, "warm-sessions", false, "on connect, refresh group members' device lists via usync so recent realm migrations are recognised sooner")
 	cmd.Flags().StringVar(&warmGroup, "warm-group", "", "restrict --warm-sessions to this group JID (default: all joined groups)")
+	cmd.Flags().DurationVar(&warmInterval, "warm-interval", 0, "in follow mode, re-warm sessions every interval (e.g. 5m; min 1m; 0 = warm once on connect)")
 	cmd.Flags().DurationVar(&idleExit, "idle-exit", 30*time.Second, "exit after being idle (once mode)")
 	cmd.Flags().DurationVar(&maxReconnect, "max-reconnect", 5*time.Minute, "give up reconnecting after this duration (0 = unlimited)")
 	cmd.Flags().DurationVar(&staleThreshold, "stale-threshold", 0, "force reconnect when keepalive failures last this long in follow mode (1s-<2m20s, 0 = disabled)")

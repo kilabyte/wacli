@@ -12,6 +12,37 @@ import (
 // lock indefinitely (a single usync IQ can otherwise block up to the ~75s IQ timeout).
 const warmSessionsTimeout = 30 * time.Second
 
+// minWarmInterval floors the re-warm cadence so a misconfiguration can't hammer usync.
+const minWarmInterval = 1 * time.Minute
+
+// runSessionWarmer warms once immediately, then (if interval > 0) re-warms on a ticker until ctx is
+// done. Used by a long-lived `sync --follow --warm-sessions --warm-interval` to keep members' device
+// lists fresh through the whole voting window. Each warm is bounded by warmSessionsTimeout.
+func (a *App) runSessionWarmer(ctx context.Context, group string, interval time.Duration) {
+	warmOnce := func() {
+		warmCtx, cancel := context.WithTimeout(ctx, warmSessionsTimeout)
+		defer cancel()
+		a.warmGroupSessions(warmCtx, group)
+	}
+	warmOnce()
+	if interval <= 0 {
+		return
+	}
+	if interval < minWarmInterval {
+		interval = minWarmInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			warmOnce()
+		}
+	}
+}
+
 // warmGroupSessions refreshes the device lists / PN<->LID mappings for members of joined groups via
 // a usync query right after connecting. Opt-in (--warm-sessions); off by default.
 //

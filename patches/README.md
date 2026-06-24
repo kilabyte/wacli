@@ -224,3 +224,65 @@ WACLI_DEBUG_POLLVOTE=1 /home/node/.local/bin/wacli sync --follow --for 10m --war
 # (start it just before the poll posts)
 ```
 Then `poll show`, cross-check against the group's screenshots, and send `pollvote.log`.
+
+---
+
+## v5 (`0.11.1-pollvote-lid-v5`) - lossless capture: prevention + recovery
+
+v4 made *arrived* votes decrypt reliably and let wacli stay connected. The 2026-06-24 audit still
+found 13 drops across 11 polls: every one a voter who voted the rest of the day's slate but is missing
+from one poll, with **no local row** (never arrived). Two root causes: (1) the keep-alive cron ran
+`sync --once --idle-exit 20s` every 5 min, so wacli was offline ~85% of the voting window; true
+continuous `--follow --warm-sessions` was never wired in. (2) Even connected, the earliest votes drop
+before senders route to wacli's migrated LID device, and there was no recovery path.
+
+### A. Robust capture (prevention) - the primary fix
+
+Run wacli as an always-on daemon instead of the 5-minute one-shot cron:
+
+```sh
+WACLI_DEBUG_POLLVOTE=1 /home/node/.local/bin/wacli sync --follow --warm-sessions --warm-interval 5m \
+  --warm-group 16047202980-1398731215@g.us 2>>/home/node/pollvote.log
+```
+
+- `--follow` stays connected continuously (single connection; the 7am poll cron and 9am bet cron keep
+  working because `send`/`poll vote` delegate through the `.send.sock` the follow daemon serves).
+- `--warm-interval 5m` re-warms members' device lists every 5 min (new in v5), so sessions are fresh
+  before each poll posts, not just at connect time.
+- This is the real lever: a continuously-present, warm linked device is far more likely to be a
+  routed recipient when the first votes are cast. Retire the `sync --once` keep-alive cron.
+
+### B. Recovery / backfill - best-effort, honestly assessed
+
+```sh
+WACLI_DEBUG_POLLVOTE=1 /home/node/.local/bin/wacli poll backfill --id <poll_msg_id> --count 500 --max-requests 10
+```
+
+`poll backfill` resolves the poll's chat, anchors at the newest local message, and walks on-demand
+history (`HISTORY_SYNC_ON_DEMAND`) **backward to the poll's creation time** (v5 fixes the prior
+backfill's wrong-direction anchor), re-running poll-vote decryption over each response. It reports the
+vote-count delta and the recovered voters.
+
+**Honest feasibility (adversarial multi-agent review, high confidence): `partial`.**
+- The decrypt + store path genuinely works: if a missed vote is present in the on-demand payload,
+  backfill *will* decrypt (the poll's `message_secret` is stored from the poll creation, and the v1/v2
+  PN<->LID + `SenderAlt` retry handles migrated voters) and upsert it. This is test-covered.
+- The catch: on-demand history returns only what the **primary phone elects to share** with the linked
+  device. There is **no server-side archive** of messages the device never received, and WhatsApp may
+  exclude already-tallied / non-displayable poll-update messages from the payload. So backfill cannot
+  be promised to recover an arbitrary never-arrived vote. The primary phone must also be online.
+
+**Decisive live test (settles B outright)** - recover Thomas Ciaccia's Jun-23 Portugal/Uzbekistan vote:
+```sh
+WACLI_DEBUG_POLLVOTE=1 /home/node/.local/bin/wacli poll backfill \
+  --id 3EB00AA01E4938C7088025 --count 500 --max-requests 10 2>>/home/node/backfill.log
+```
+Then grep `backfill.log` for his voter JID:
+- a `pollvote_received` line with `"source":"history"` then `pollvote_outcome ok` (and a row in
+  `poll_votes`) => recovery works, ship it as the safety net;
+- **no** `pollvote_received` line for his JID => the vote is not in the payload the phone shared =>
+  delivery gap confirmed, backfill cannot recover it (the predicted dominant outcome) => rely on A;
+- `pollvote_received` then `pollvote_outcome failed` => realm/secret issue (fixable in decrypt).
+
+Net: ship A as the fix and B as a best-effort recovery + diagnostic. The screenshot oracle stays the
+safety net until A is proven over a full slate.
