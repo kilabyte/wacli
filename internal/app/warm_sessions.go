@@ -108,6 +108,12 @@ func (a *App) warmGroupSessions(ctx context.Context, groupFilter string) {
 			map[string]any{"error": err.Error(), "members": len(members), "groups": groupCount})
 		return
 	}
+	// A successful warm proves a live, usable connection (it ran real usync IQs), so
+	// refresh the heartbeat. In follow mode this fires every --warm-interval, giving a
+	// supervisor a reliable connection-health signal even in a quiet group with no
+	// inbound messages. (A wedged/dead socket fails GetJoinedGroups above and returns
+	// early, so the heartbeat correctly goes stale.)
+	a.writeHeartbeat()
 	a.emitOrPrint("warm_sessions",
 		map[string]any{"members": len(members), "groups": groupCount, "devices": devices},
 		"Warmed %d group member(s) across %d group(s): %d devices refreshed.\n", len(members), groupCount, devices)
