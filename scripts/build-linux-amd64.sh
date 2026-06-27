@@ -15,7 +15,7 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${OUT:-dist/wacli-linux-amd64}"
 go_image="${GO_IMAGE:-golang:1.25}"   # Debian (glibc) toolchain, matches the gateway
 # Distinct version so `wacli --version` confirms the patched binary is the one running.
-version="${VERSION:-0.11.1-pollvote-lid-v6}"
+version="${VERSION:-0.11.1-pollvote-lid-v7}"
 
 mkdir -p "$repo_root/$(dirname "$out")"
 

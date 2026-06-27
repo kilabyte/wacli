@@ -25,6 +25,23 @@ const (
 
 var errSendDelegateUnavailable = errors.New("send delegate unavailable")
 
+// delegateNoCloseReconnect is the runSendOperation reconnect callback for the
+// delegated-send handlers. The delegate runs INSIDE the follow daemon, which owns the
+// WhatsApp connection via its reconnect loop. reconnectForSend does Close+Connect, which
+// races that loop into a StreamReplaced/flap (the WC morning vote-loss cause), so a
+// delegated send must never touch the connection. Instead we pause briefly to let a
+// transient device-cache contention (e.g. the warm-sessions usync holding the lock)
+// clear, then let runSendOperation retry on the same live connection. If it is genuinely
+// down, the send just fails and the daemon's follow loop reconnects on its own.
+func delegateNoCloseReconnect(ctx context.Context) error {
+	select {
+	case <-time.After(1500 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type sendDelegateRequest struct {
 	Version              int      `json:"version"`
 	Kind                 string   `json:"kind"`
@@ -236,7 +253,7 @@ func executeDelegatedPresence(ctx context.Context, a *app.App, req sendDelegateR
 	if err != nil {
 		return sendDelegateResponse{}, err
 	}
-	if err := sendPresenceWithRetry(ctx, reconnectForSend(a), func(ctx context.Context) error {
+	if err := sendPresenceWithRetry(ctx, delegateNoCloseReconnect, func(ctx context.Context) error {
 		return a.WA().SendChatPresence(ctx, toJID, state, chatMedia)
 	}); err != nil {
 		return sendDelegateResponse{}, err
@@ -266,7 +283,7 @@ func executeDelegatedText(ctx context.Context, a *app.App, req sendDelegateReque
 		return sendDelegateResponse{}, err
 	}
 	preview := fetchLinkPreview(ctx, req.Message, req.NoPreview)
-	msgID, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (types.MessageID, error) {
+	msgID, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (types.MessageID, error) {
 		return sendTextMessage(ctx, a, toJID, req.Message, req.ReplyTo, req.ReplyToSender, preview, mentionedJIDs, ephemeral)
 	})
 	if err != nil {
@@ -287,7 +304,7 @@ func executeDelegatedFile(ctx context.Context, a *app.App, req sendDelegateReque
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	res, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (sendDelegateResponse, error) {
+	res, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (sendDelegateResponse, error) {
 		msgID, meta, err := sendFile(ctx, a, toJID, req.File, sendFileOptions{
 			filename:      req.Filename,
 			caption:       req.Caption,
@@ -317,7 +334,7 @@ func executeDelegatedSticker(ctx context.Context, a *app.App, req sendDelegateRe
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	res, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (sendDelegateResponse, error) {
+	res, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (sendDelegateResponse, error) {
 		msgID, meta, err := sendSticker(ctx, a, toJID, req.File, sendStickerOptions{
 			replyTo:       req.ReplyTo,
 			replyToSender: req.ReplyToSender,
@@ -343,7 +360,7 @@ func executeDelegatedReact(ctx context.Context, a *app.App, req sendDelegateRequ
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	sentID, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (types.MessageID, error) {
+	sentID, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (types.MessageID, error) {
 		return a.WA().SendReaction(ctx, chat, senderJID, types.MessageID(req.ID), req.Reaction)
 	})
 	if err != nil {

@@ -463,7 +463,7 @@ func executeDelegatedPollVote(ctx context.Context, a *app.App, req sendDelegateR
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	sentID, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (types.MessageID, error) {
+	sentID, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (types.MessageID, error) {
 		return a.WA().SendPollVote(ctx, info, cleaned)
 	})
 	if err != nil {
