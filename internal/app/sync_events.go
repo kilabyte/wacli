@@ -99,6 +99,12 @@ func (a *App) addSyncEventHandler(ctx context.Context, opts SyncOptions, message
 			lastEvent.Store(nowUTC().UnixNano())
 			a.handleChatStateEvent(ctx, v)
 		case *events.Connected:
+			// Intentionally NOT writing the heartbeat here: HEARTBEAT must reflect a
+			// usable connection, not a bare socket. A connect-then-immediately-drop flap
+			// fires events.Connected on every cycle, so heartbeat-on-Connected would mask
+			// the flap from a freshness-based watchdog. Liveness is recorded on real sync
+			// activity and on a successful warm (warmGroupSessions), both of which require
+			// a working connection.
 			a.emitOrPrint("connected", nil, "\nConnected.\n")
 		case *events.KeepAliveTimeout:
 			a.handleKeepAliveTimeout(opts, v, staleReconnect)

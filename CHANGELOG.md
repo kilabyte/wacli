@@ -4,9 +4,18 @@
 
 ### Added
 
+- Sync: `--for <duration>` bounds a `--follow` run to a fixed window then exits cleanly, so wacli can be a guaranteed live recipient through a poll's early-vote window without manual interruption.
+- Sync: `--warm-sessions` (opt-in, off by default) refreshes group members' device lists via a usync query on connect so members who recently migrated realm (`@s.whatsapp.net` -> `@lid`) are recognised sooner; `--warm-group <jid>` restricts it to one group. Sends nothing user-visible.
+- Polls: `WACLI_DEBUG_POLLVOTE=1` emits structured receipt + decrypt-outcome records for poll votes (NDJSON when `--events`, else greppable stderr lines), to separate "never arrived" (delivery gap) from "arrived but failed to decrypt" per voter.
+- Sync: `--warm-interval <duration>` re-warms sessions periodically during a `--follow --warm-sessions` run (min 1m), so a long-lived connection keeps members' device lists fresh before each poll. Combined with continuous `sync --follow --warm-sessions --warm-interval 5m` this is the recommended always-on capture daemon (the 7am/9am crons still post/bet through the send-delegate socket).
+- Polls: `poll backfill --id <poll_msg_id>` requests the poll's chat history from the primary device (on-demand history sync), anchored at the newest local message and walking back to the poll's time window, then re-runs poll-vote decryption to recover votes that never arrived live. Best-effort: it can only recover votes the phone includes in the on-demand payload (see `patches/README.md` for the honest feasibility assessment and the decisive live test).
+
 ### Security
 
 ### Fixed
+
+- Polls: decrypt group poll votes from members addressed in a different realm (`@s.whatsapp.net` vs `@lid`) than the one used to encrypt the vote. Previously a significant fraction of votes were silently dropped from `poll show`. Patches the vendored whatsmeow message-secret decryption to retry key derivation across the PN<->LID alternates of both the poll author and the voter, including the voter's envelope-provided alternate realm (`SenderAlt`) so it works even when `whatsmeow_lid_map` has no mapping yet (`third_party/whatsmeow`, `replace` in `go.mod`).
+- Sync: `sync --follow` no longer aborts when the send-delegate socket's `chmod` fails on bind-mounted filesystems (e.g. macOS Docker virtiofs returns `EINVAL`); the socket is already protected by the owner-only store directory, so the failure is now a warning.
 
 ## 0.11.1 - 2026-06-11
 

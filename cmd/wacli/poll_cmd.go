@@ -25,6 +25,81 @@ func newPollCmd(flags *rootFlags) *cobra.Command {
 	}
 	cmd.AddCommand(newPollVoteCmd(flags))
 	cmd.AddCommand(newPollShowCmd(flags))
+	cmd.AddCommand(newPollBackfillCmd(flags))
+	return cmd
+}
+
+// ---- backfill -------------------------------------------------------------
+
+func newPollBackfillCmd(flags *rootFlags) *cobra.Command {
+	var id string
+	var count int
+	var maxRequests int
+	var wait time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "backfill",
+		Short: "Recover a poll's missed votes from your primary device (on-demand history sync)",
+		Long: "Pulls the poll's chat history from your phone and re-runs poll-vote decryption over it, " +
+			"recovering votes that never reached this device live. The poll's creation must already be " +
+			"in the local store (run `wacli sync` first). Your phone must be online to serve the request.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(id) == "" {
+				return fmt.Errorf("--id is required (the poll message id)")
+			}
+			if err := flags.requireWritable(); err != nil {
+				return err
+			}
+
+			ctx, stop := signalContextWithEvents(out.NewEventWriter(os.Stderr, flags.events))
+			defer stop()
+
+			a, lk, err := newApp(ctx, flags, true, false)
+			if err != nil {
+				return err
+			}
+			defer closeApp(a, lk)
+
+			res, err := a.BackfillPoll(ctx, app.PollBackfillOptions{
+				PollMsgID:      id,
+				Count:          count,
+				MaxRequests:    maxRequests,
+				WaitPerRequest: wait,
+			})
+			if err != nil {
+				return err
+			}
+
+			if flags.asJSON {
+				return out.WriteJSON(os.Stdout, map[string]any{
+					"poll_msg_id":      res.PollMsgID,
+					"chat":             res.ChatJID,
+					"votes_before":     res.VotesBefore,
+					"votes_after":      res.VotesAfter,
+					"recovered":        res.Recovered,
+					"recovered_voters": res.RecoveredVoters,
+					"requests_sent":    res.RequestsSent,
+					"responses_seen":   res.ResponsesSeen,
+					"reached_poll":     res.ReachedPoll,
+				})
+			}
+
+			fmt.Fprintf(os.Stdout, "Poll %s: %d -> %d votes (recovered %d) in %d request(s); reached poll window: %v\n",
+				res.PollMsgID, res.VotesBefore, res.VotesAfter, res.Recovered, res.RequestsSent, res.ReachedPoll)
+			for _, v := range res.RecoveredVoters {
+				fmt.Fprintf(os.Stdout, "  + %s\n", v)
+			}
+			if res.Recovered == 0 && !res.ReachedPoll {
+				fmt.Fprintln(os.Stderr, "note: did not reach the poll's time window; try a larger --count or --max-requests.")
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "poll message id to backfill")
+	cmd.Flags().IntVar(&count, "count", app.DefaultBackfillCount, "messages to request per on-demand sync")
+	cmd.Flags().IntVar(&maxRequests, "max-requests", 10, "max on-demand requests to walk back through")
+	cmd.Flags().DurationVar(&wait, "wait", 60*time.Second, "time to wait for an on-demand response per request")
 	return cmd
 }
 
@@ -388,7 +463,7 @@ func executeDelegatedPollVote(ctx context.Context, a *app.App, req sendDelegateR
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	sentID, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (types.MessageID, error) {
+	sentID, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (types.MessageID, error) {
 		return a.WA().SendPollVote(ctx, info, cleaned)
 	})
 	if err != nil {

@@ -43,6 +43,9 @@ type fakeWA struct {
 	news     map[types.JID]*types.NewsletterMetadata
 	lids     map[types.JID]types.JID
 
+	warmSessionsJIDs []types.JID
+	warmSessionsErr  error
+
 	getAllContactsErr           error
 	getJoinedGroupsErr          error
 	getSubscribedNewslettersErr error
@@ -268,6 +271,16 @@ func (f *fakeWA) ResolvePNToLID(ctx context.Context, jid types.JID) types.JID {
 
 func (f *fakeWA) GetUserInfo(ctx context.Context, jids []types.JID) (map[types.JID]types.UserInfo, error) {
 	return map[types.JID]types.UserInfo{}, nil
+}
+
+func (f *fakeWA) WarmSessions(ctx context.Context, jids []types.JID) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.warmSessionsJIDs = append(f.warmSessionsJIDs, jids...)
+	if f.warmSessionsErr != nil {
+		return 0, f.warmSessionsErr
+	}
+	return len(jids), nil
 }
 
 func (f *fakeWA) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {

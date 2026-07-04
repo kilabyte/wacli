@@ -45,6 +45,9 @@ type SyncOptions struct {
 	RefreshContacts     bool
 	RefreshGroups       bool
 	RefreshChannels     bool
+	WarmSessions        bool          // refresh group members' device lists on connect (opt-in)
+	WarmGroup           string        // restrict warming to this group JID (empty = all joined groups)
+	WarmInterval        time.Duration // follow mode: re-warm every interval (0 = warm once on connect)
 	IdleExit            time.Duration // only used for bootstrap/once
 	MaxReconnect        time.Duration // max time to attempt reconnection before giving up (0 = unlimited)
 	StaleThreshold      time.Duration // force reconnect when keepalive failures last this long in follow mode (0 = disabled)
@@ -188,6 +191,17 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 		if err := opts.AfterConnect(syncCtx); err != nil {
 			return SyncResult{MessagesStored: messagesStored.Load()}, err
 		}
+	}
+	if opts.WarmSessions {
+		// Warming does a usync that holds whatsmeow's device-cache lock (and can take up to the IQ
+		// timeout). Run it in the background, AFTER the send-delegate is up, so it never delays wacli
+		// becoming a live recipient or sending. In follow mode with WarmInterval>0 it re-warms on a
+		// ticker so a long-lived connection keeps members' device lists fresh before each poll.
+		interval := opts.WarmInterval
+		if opts.Mode != SyncModeFollow {
+			interval = 0 // one-shot modes warm once
+		}
+		go a.runSessionWarmer(syncCtx, opts.WarmGroup, interval)
 	}
 
 	var err error

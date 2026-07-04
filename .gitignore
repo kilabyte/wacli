@@ -39,7 +39,11 @@ go.work.sum
 
 # Built CLI binary
 /wacli
+/wacli-patched*
 
 # pnpm build output
 /dist/
 .pnpm-store/
+
+# macOS
+.DS_Store
