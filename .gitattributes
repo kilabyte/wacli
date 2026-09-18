@@ -1,0 +1,5 @@
+# Vendored third-party source: don't apply our whitespace rules to it.
+third_party/** -whitespace linguist-vendored
+
+# Patch files contain diff context lines (space+tab) by nature.
+patches/*.patch -whitespace

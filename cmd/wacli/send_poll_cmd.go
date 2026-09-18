@@ -226,7 +226,7 @@ func executeDelegatedPoll(ctx context.Context, a *app.App, req sendDelegateReque
 	if err := warnRapidSendIfNeeded(a.StoreDir(), time.Now().UTC(), os.Stderr); err != nil {
 		return sendDelegateResponse{}, err
 	}
-	msgID, err := runSendOperation(ctx, reconnectForSend(a), func(ctx context.Context) (types.MessageID, error) {
+	msgID, err := runSendOperation(ctx, delegateNoCloseReconnect, func(ctx context.Context) (types.MessageID, error) {
 		return sendPollMessage(ctx, a.WA(), toJID, req.Question, cleaned, req.Selectable, req.Ephemeral)
 	})
 	if err != nil {

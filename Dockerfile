@@ -4,6 +4,9 @@ FROM golang:1.25-alpine@sha256:8d22e29d960bc50cd025d93d5b7c7d220b1ee9aa7a239b3c8
 RUN apk add --no-cache build-base ca-certificates git
 WORKDIR /src
 COPY go.mod go.sum ./
+# third_party holds the vendored, patched whatsmeow that go.mod replaces, so it must
+# exist before `go mod download` can resolve the module graph.
+COPY third_party ./third_party
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 CGO_CFLAGS="-Wno-error=missing-braces" GOOS=linux \
