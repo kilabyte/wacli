@@ -1,8 +1,8 @@
 diff --git a/msgsecret.go b/msgsecret.go
-index d130b2c..2d42e40 100644
+index 394e838..220ef49 100644
 --- a/msgsecret.go
 +++ b/msgsecret.go
-@@ -109,20 +109,70 @@ func (cli *Client) decryptMsgSecret(ctx context.Context, msg *events.Message, us
+@@ -110,35 +110,82 @@ func (cli *Client) decryptMsgSecret(ctx context.Context, msg *events.Message, us
  	if baseEncKey == nil {
  		return nil, ErrOriginalMessageSecretNotFound
  	}
@@ -13,13 +13,33 @@ index d130b2c..2d42e40 100644
 -		// Hack for trying both the original sender in the new message and the one who we received the secret key from.
 -		// This will hopefully become unnecessary when WhatsApp fully finishes their migration to LIDs.
 -		if origSender != storedOrigSender && strings.Contains(err.Error(), "message authentication failed") {
--			secretKey, additionalData = generateMsgSecretKey(useCase, msg.Info.Sender, origMsgKey.GetID(), origSender, baseEncKey)
+-			secretKey, additionalData = generateMsgSecretKey(useCase, msg.Info.Sender, origMsgKey.GetID(), storedOrigSender, baseEncKey)
 -			plaintext, err = gcmutil.Decrypt(secretKey, encrypted.GetEncIV(), encrypted.GetEncPayload(), additionalData)
+-			if err == nil {
+-				zerolog.Ctx(ctx).Debug().
+-					Str("orig_message_id", origMsgKey.GetID()).
+-					Str("secret_message_id", msg.Info.ID).
+-					Stringer("stored_orig_sender", storedOrigSender).
+-					Stringer("key_orig_sender", origSender).
+-					Msg("Decrypted message secret with orig sender hack")
+-			}
+-		}
+-		if err != nil {
+-			return nil, fmt.Errorf("failed to decrypt secret message: %w (sender: %s, orig sender: %s and %s)", err, msg.Info.Sender, origSender, storedOrigSender)
+-		}
+-	} else {
 +	if err == nil {
+ 		zerolog.Ctx(ctx).Debug().
+ 			Str("orig_message_id", origMsgKey.GetID()).
+ 			Str("secret_message_id", msg.Info.ID).
+ 			Stringer("stored_orig_sender", storedOrigSender).
+ 			Stringer("key_orig_sender", origSender).
+ 			Msg("Decrypted message secret without hack")
 +		return plaintext, nil
 +	} else if !strings.Contains(err.Error(), "message authentication failed") {
 +		return nil, fmt.Errorf("failed to decrypt secret message: %w", err)
-+	}
+ 	}
+-	return plaintext, nil
 +	// The message secret key (and AEAD additional data) is derived from the JID *strings* of
 +	// both the original message sender and the modification sender. While WhatsApp migrates to
 +	// LIDs, the realm (@s.whatsapp.net vs @lid) of either identity in the new event can differ
@@ -41,11 +61,15 @@ index d130b2c..2d42e40 100644
 +			}
 +			secretKey, additionalData = generateMsgSecretKey(useCase, modSender, origMsgKey.GetID(), sender, baseEncKey)
 +			if pt, decErr := gcmutil.Decrypt(secretKey, encrypted.GetEncIV(), encrypted.GetEncPayload(), additionalData); decErr == nil {
++				zerolog.Ctx(ctx).Debug().
++					Str("orig_message_id", origMsgKey.GetID()).
++					Str("secret_message_id", msg.Info.ID).
++					Stringer("mod_sender", modSender).
++					Stringer("key_orig_sender", sender).
++					Msg("Decrypted message secret with alternate realm retry")
 +				return pt, nil
 +			}
- 		}
--		if err != nil {
--			return nil, fmt.Errorf("failed to decrypt secret message: %w", err)
++		}
 +	}
 +	return nil, fmt.Errorf("failed to decrypt secret message: %w (sender: %s, orig sender: %s and %s)", err, msg.Info.Sender, origSender, storedOrigSender)
 +}
@@ -75,9 +99,8 @@ index d130b2c..2d42e40 100644
 +			if alt, err := cli.Store.GetAltJID(ctx, jid.ToNonAD()); err == nil {
 +				add(alt)
 +			}
- 		}
- 	}
--	return plaintext, nil
++		}
++	}
 +	return out
  }
  

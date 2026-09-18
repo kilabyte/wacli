@@ -899,7 +899,8 @@ func (c *Client) SetStatusMessage(ctx context.Context, msg string) error {
 	if cli == nil || !cli.IsConnected() {
 		return fmt.Errorf("not connected")
 	}
-	return cli.SetStatusMessage(ctx, msg)
+	// whatsmeow >= 2026-09 takes a structured status input instead of a bare string.
+	return cli.SetStatusMessage(ctx, types.SetStatusInput{Text: &msg})
 }
 
 func (c *Client) SetProfileName(ctx context.Context, name string) error {

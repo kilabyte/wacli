@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
 	"go.mau.fi/util/random"
 	"google.golang.org/protobuf/proto"
 
@@ -113,6 +114,12 @@ func (cli *Client) decryptMsgSecret(ctx context.Context, msg *events.Message, us
 	secretKey, additionalData := generateMsgSecretKey(useCase, msg.Info.Sender, origMsgKey.GetID(), origSender, baseEncKey)
 	plaintext, err := gcmutil.Decrypt(secretKey, encrypted.GetEncIV(), encrypted.GetEncPayload(), additionalData)
 	if err == nil {
+		zerolog.Ctx(ctx).Debug().
+			Str("orig_message_id", origMsgKey.GetID()).
+			Str("secret_message_id", msg.Info.ID).
+			Stringer("stored_orig_sender", storedOrigSender).
+			Stringer("key_orig_sender", origSender).
+			Msg("Decrypted message secret without hack")
 		return plaintext, nil
 	} else if !strings.Contains(err.Error(), "message authentication failed") {
 		return nil, fmt.Errorf("failed to decrypt secret message: %w", err)
@@ -138,6 +145,12 @@ func (cli *Client) decryptMsgSecret(ctx context.Context, msg *events.Message, us
 			}
 			secretKey, additionalData = generateMsgSecretKey(useCase, modSender, origMsgKey.GetID(), sender, baseEncKey)
 			if pt, decErr := gcmutil.Decrypt(secretKey, encrypted.GetEncIV(), encrypted.GetEncPayload(), additionalData); decErr == nil {
+				zerolog.Ctx(ctx).Debug().
+					Str("orig_message_id", origMsgKey.GetID()).
+					Str("secret_message_id", msg.Info.ID).
+					Stringer("mod_sender", modSender).
+					Stringer("key_orig_sender", sender).
+					Msg("Decrypted message secret with alternate realm retry")
 				return pt, nil
 			}
 		}
@@ -313,7 +326,7 @@ func (cli *Client) DecryptSecretEncryptedMessage(ctx context.Context, evt *event
 	}
 	plaintext, err := cli.decryptMsgSecret(ctx, evt, secretType, encMessage, encMessage.GetTargetMessageKey())
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt message: %w", err)
+		return nil, err
 	}
 	var msg waE2E.Message
 	err = proto.Unmarshal(plaintext, &msg)

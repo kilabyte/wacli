@@ -2,6 +2,20 @@
 
 ## 0.11.2 - Unreleased
 
+### Changed
+
+- Vendored whatsmeow refreshed from the 2026-05 pin `6dd3d24c1ca6` to `2e338d0ee73d`
+  (2026-09-17, "proto: update to v1047769893"), because WhatsApp began rejecting the
+  protocol version the May pin spoke: the v7 daemon could no longer hold a connection
+  and exited with "30 consecutive reconnects failed to hold 1m0s". The refresh raises
+  the Go floor to 1.26 (build image `golang:1.26`). The poll-vote LID-realm patch is
+  NOT upstream yet and was re-ported onto the new base; `patches/0001-*.patch` is
+  regenerated against it. Two upstream API changes were ported at the call sites:
+  `SetStatusMessage` now takes a structured `types.SetStatusInput`, and
+  `DownloadMediaWithPathToFile` dropped `fileLength` and gained a trailing
+  `allowNoHash` bool. Build version string: `0.11.1-pollvote-lid-v8`.
+
+
 ### Added
 
 - Sync: `--for <duration>` bounds a `--follow` run to a fixed window then exits cleanly, so wacli can be a guaranteed live recipient through a poll's early-vote window without manual interruption.
